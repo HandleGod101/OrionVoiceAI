@@ -25,20 +25,31 @@ If needed
 lsof -ti :8000 | xargs kill -9
 ```
 
-If new computer:
+
+To share
+```bash
+python -m uvicorn app:app --host 127.0.0.1 --port 8000
+In new terminal run share_mac.sh
+copy link
+```
+
+
+If installing on new computer:
 
 ```bash
 python -m pip install -r requirements.txt
-```
 
 Copy `.env.example` to `.env`, add your key, then:
 
-```bash
 python -m uvicorn app:app --host 127.0.0.1 --port 8000 --reload & open http://127.0.0.1:8000
+
+or  ./run_mac.sh  / ./run_windows.bat
 
 ```
 
-Open `http://localhost:8000`.
+
+
+
 
 ## Adding your 100 scenarios
 
