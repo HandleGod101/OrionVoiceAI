@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Orion Voice Trainer</title>
+<link rel="stylesheet" href="/static/styles.css?v=2">
+</head>
+<body>
+<main class="shell">
+
+  <header>
+    <div>
+      <div class="eyebrow">Orion Voice AI</div>
+      <h1>Consumer call simulator</h1>
+      <p class="sub">Practice a live call with an AI-voiced consumer. Nothing is scored yet — this is just the interaction.</p>
+    </div>
+    <div id="statusPill" class="pill idle">
+      <span></span>
+      <b id="statusText">Ready</b>
+    </div>
+  </header>
+
+  <!-- Step 1: scenario ------------------------------------------------- -->
+  <section class="card setup">
+    <div class="sectionTitle">
+      <div>
+        <h2>1. Choose a scenario</h2>
+        <p>You'll only see the call brief below — the consumer's private details stay with the AI, same as a real call.</p>
+      </div>
+    </div>
+    <label for="scenario">Scenario</label>
+    <select id="scenario" aria-describedby="scenarioBrief"></select>
+    <div id="scenarioBrief" class="brief"></div>
+  </section>
+
+  <!-- Step 2: consumer variation ---------------------------------------- -->
+  <section class="card setup">
+    <div class="sectionTitle">
+      <div>
+        <h2>2. Set the consumer's mood</h2>
+        <p>Leave any of these on Random so the same scenario plays out differently each time.</p>
+      </div>
+      <button id="randomizeBtn" class="secondary small" type="button">Randomize all</button>
+    </div>
+    <div class="optionsGrid">
+      <div>
+        <label for="communication">Talks like</label>
+        <select id="communication"></select>
+      </div>
+      <div>
+        <label for="difficulty">Difficulty</label>
+        <select id="difficulty"></select>
+      </div>
+    </div>
+  </section>
+
+  <!-- Step 3: the call ---------------------------------------------------- -->
+  <section class="card controls">
+    <h2>3. Start the call</h2>
+    <p id="activeConfig" class="sub">Pick a scenario above, then start whenever you're ready.</p>
+
+    <div class="callButtons">
+      <button id="startBtn" class="primary" type="button">Start call</button>
+      <button id="endBtn" class="danger" type="button" disabled>End call</button>
+      <button id="muteBtn" class="secondary" type="button" disabled>Mute</button>
+    </div>
+
+    <div class="callMeta">
+      <div>
+        <small>Call time</small>
+        <strong id="timer">00:00</strong>
+      </div>
+      <div>
+        <small>Microphone</small>
+        <strong id="micState">Off</strong>
+      </div>
+      <div>
+        <small>Consumer AI</small>
+        <strong id="aiState">Disconnected</strong>
+      </div>
+    </div>
+  </section>
+
+  <!-- Transcript + troubleshooting ---------------------------------------- -->
+  <section class="grid">
+
+    <section class="card panel">
+      <div class="sectionTitle">
+        <h2>Live transcript</h2>
+        <button id="clearTranscript" class="textButton" type="button">Clear</button>
+      </div>
+      <div id="transcript" class="transcript">
+        <div class="empty">Your conversation will show up here once the call starts.</div>
+      </div>
+    </section>
+
+    <section class="card panel">
+      <div class="debugPanel">
+        <div class="sectionTitle">
+          <h2>Troubleshooting</h2>
+        </div>
+        <p class="sub" style="margin-bottom:12px;">Only needed if a call won't connect. Safe to ignore otherwise.</p>
+        <button id="healthBtn" class="secondary small" type="button">Check server connection</button>
+        <div class="debugLog" style="margin-top:12px;">
+          <pre id="debug">Ready. Press F12 for full browser logs.</pre>
+        </div>
+        <div style="margin-top:8px; text-align:right;">
+          <button id="copyDebug" class="textButton" type="button">Copy log</button>
+        </div>
+      </div>
+    </section>
+
+  </section>
+
+  <div id="errorBox" class="errorBox hidden" role="alert"></div>
+  <audio id="remoteAudio" autoplay></audio>
+
+</main>
+<script src="/static/app.js?v=3"></script>
+</body>
+</html>
