@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Orion Voice Trainer</title>
-<link rel="stylesheet" href="/static/styles.css?v=2">
+<link rel="stylesheet" href="/static/styles.css?v=4">
 </head>
 <body>
 <main class="shell">
@@ -26,12 +26,12 @@
     <div class="sectionTitle">
       <div>
         <h2>1. Choose a scenario</h2>
-        <p>You'll only see the call brief below — the consumer's private details stay with the AI, same as a real call.</p>
+        <p>Review the fictional account snapshot before the call. The consumer's hidden scenario facts stay with the AI.</p>
       </div>
     </div>
     <label for="scenario">Scenario</label>
-    <select id="scenario" aria-describedby="scenarioBrief"></select>
-    <div id="scenarioBrief" class="brief"></div>
+    <select id="scenario"></select>
+    <div id="accountDebrief" class="accountDebrief" aria-live="polite"></div>
   </section>
 
   <!-- Step 2: consumer variation ---------------------------------------- -->
@@ -41,7 +41,7 @@
         <h2>2. Set the consumer's mood</h2>
         <p>Leave any of these on Random so the same scenario plays out differently each time.</p>
       </div>
-      <button id="randomizeBtn" class="secondary small" type="button">Randomize all</button>
+      <button id="randomizeBtn" class="secondary small" type="button">Randomize</button>
     </div>
     <div class="optionsGrid">
       <div>
@@ -60,8 +60,17 @@
     <h2>3. Start the call</h2>
     <p id="activeConfig" class="sub">Pick a scenario above, then start whenever you're ready.</p>
 
+    <div class="callDirectionPicker">
+      <label for="callDirection">Call direction</label>
+      <select id="callDirection">
+        <option value="outbound">Outbound — dial the consumer</option>
+        <option value="inbound">Inbound — receive a consumer call</option>
+      </select>
+    </div>
+    <div id="callPhase" class="callPhase hidden" role="status" aria-live="polite"></div>
     <div class="callButtons">
       <button id="startBtn" class="primary" type="button">Start call</button>
+      <button id="answerBtn" class="primary hidden" type="button">Answer incoming call</button>
       <button id="endBtn" class="danger" type="button" disabled>End call</button>
       <button id="muteBtn" class="secondary" type="button" disabled>Mute</button>
     </div>
@@ -117,6 +126,6 @@
   <audio id="remoteAudio" autoplay></audio>
 
 </main>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

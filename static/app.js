@@ -13,6 +13,113 @@ let consumerName = "Consumer";
 let scenarios = [];
 let opts = {};
 let activeCallId = 0;
+let callDirection = "outbound";
+let callPhase = "idle";
+let ringingInterval = null;
+let ringTimeout = null;
+let ringAudioContext = null;
+let pendingCall = false;
+let greetingCallId = null;
+let greetingResponsePending = false;
+
+function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+function stopRinging() {
+    if (ringingInterval) clearInterval(ringingInterval);
+    ringingInterval = null;
+    if (ringTimeout) clearTimeout(ringTimeout);
+    ringTimeout = null;
+    if (ringAudioContext) { ringAudioContext.close().catch(() => {}); ringAudioContext = null; }
+}
+function ringTone() {
+    try {
+        if (!ringAudioContext) ringAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = ringAudioContext;
+        const now = ctx.currentTime;
+        for (const freq of [440, 480]) {
+            const osc = ctx.createOscillator(), gain = ctx.createGain();
+            osc.type = "sine"; osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.0001, now);
+            gain.gain.exponentialRampToValueAtTime(0.045, now + 0.025);
+            gain.gain.setValueAtTime(0.045, now + 1.95);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + 2.0);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(now); osc.stop(now + 2.01);
+        }
+    } catch (err) { log("Ringtone unavailable: " + err.message); }
+}
+function showCallPhase(message, phase) {
+    callPhase = phase;
+    $("callPhase").textContent = message;
+    $("callPhase").classList.toggle("hidden", phase === "idle");
+}
+function updateMicrophone() {
+    const enabled = !muted && !greetingResponsePending;
+    stream?.getAudioTracks().forEach(track => { track.enabled = enabled; });
+    $("micState").textContent = muted ? "Muted" : greetingResponsePending ? "Waiting for greeting…" : "On";
+}
+function greetConsumer(callId) {
+    if (callId !== activeCallId || greetingCallId === callId) return;
+    if (!dc || dc.readyState !== "open") {
+        error("Cannot start the opening greeting because the Realtime data channel is not open.");
+        updateMicrophone();
+        return;
+    }
+    greetingCallId = callId;
+    greetingResponsePending = true;
+    updateMicrophone();
+    try {
+        dc.send(JSON.stringify({
+            type: "response.create",
+            response: {
+                output_modalities: ["audio"],
+                instructions: "The simulated telephone has just connected. You are the consumer answering or calling. Say ONLY one short, casual opening greeting, such as 'Hello?', 'Hi?', or 'Hey, hello?'. Do not give your name, account information, reason for calling, or any other details yet. Then wait for the human collector to speak."
+            }
+        }));
+    } catch (err) {
+        greetingResponsePending = false;
+        updateMicrophone();
+        error("Could not start the opening greeting: " + err.message);
+    }
+}
+function connectCall(callId) {
+    if (callId !== activeCallId || !pendingCall) return;
+    stopRinging();
+    showCallPhase("Connected — consumer answering…", "live");
+    status("Live", "live");
+    started = Date.now();
+    if (timer) clearInterval(timer);
+    timer = setInterval(tick, 1000);
+    $("muteBtn").disabled = false;
+    pendingCall = false;
+    greetConsumer(callId);
+}
+function beginRinging(callId) {
+    if (callId !== activeCallId) return;
+    if (callDirection === "inbound") {
+        showCallPhase("Incoming call — answer within 20 seconds", "ringing");
+        status("Incoming call", "connecting");
+        $("answerBtn").classList.remove("hidden");
+        ringTone();
+        ringingInterval = setInterval(ringTone, 6000);
+        ringTimeout = setTimeout(() => {
+            if (callId !== activeCallId || !pendingCall) return;
+            end(true);
+            showCallPhase("Missed call — no connection established", "missed");
+            status("Missed call", "idle");
+        }, 20000);
+    } else {
+        showCallPhase("Dialing…", "dialing");
+        status("Dialing", "connecting");
+        ringTone();
+        ringTimeout = setTimeout(() => {
+            if (callId !== activeCallId || !pendingCall) return;
+            stopRinging();
+            showCallPhase("Ringing — waiting for consumer…", "ringing");
+            ringTimeout = setTimeout(() => connectCall(callId), 500 + Math.random() * 1000);
+        }, 2000);
+    }
+}
+
 
 
 function log(message, data = null) {
@@ -52,6 +159,33 @@ function title(text) {
         .replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+    })[char]);
+}
+
+function displayLabel(key) {
+    return title(key).replace(/\bDob\b/g, "Date of Birth");
+}
+
+function displayValue(key, value) {
+    if (typeof value === "boolean") {
+        return value ? "Yes" : "No";
+    }
+    if (typeof value === "number" && /balance|payment|amount/i.test(key)) {
+        return new Intl.NumberFormat("en-US", {
+            style: "currency",
+            currency: "USD"
+        }).format(value);
+    }
+    return String(value);
+}
+
 
 async function setup() {
     const [scenarioResponse, optionsResponse] = await Promise.all([
@@ -66,27 +200,66 @@ async function setup() {
     $("scenario").innerHTML = scenarios
         .map(
             (scenario) =>
-                `<option value="${scenario.id}">
-                    ${scenario.name}
+                `<option value="${escapeHtml(scenario.id)}">
+                    ${escapeHtml(scenario.name)}
                 </option>`
         )
         .join("");
 
-    brief();
+    renderAccountDebrief();
     await loadScenarioOptions();
     health();
 }
 
 
-function brief() {
+function renderAccountDebrief() {
     const scenario = scenarios.find(
         (scenario) => scenario.id === $("scenario").value
     );
 
-    $("scenarioBrief").innerHTML = `
-        <b>${scenario.name}</b>
-        <br></b>
-        <br> <b>Task:</b> ${scenario.collector_brief}</br>
+    if (!scenario) {
+        $("accountDebrief").textContent = "";
+        return;
+    }
+
+    const consumer = scenario.consumer || {};
+    const account = scenario.account || {};
+    const profileRows = Object.entries(consumer)
+        .map(([key, value]) => `
+            <div class="accountField">
+                <dt>${escapeHtml(displayLabel(key))}</dt>
+                <dd>${escapeHtml(displayValue(key, value))}</dd>
+            </div>
+        `)
+        .join("");
+    const accountRows = Object.entries(account)
+        .map(([key, value]) => `
+            <div class="accountField">
+                <dt>${escapeHtml(displayLabel(key))}</dt>
+                <dd>${escapeHtml(displayValue(key, value))}</dd>
+            </div>
+        `)
+        .join("");
+
+    $("accountDebrief").innerHTML = `
+        <section class="accountPreview" aria-label="Fictional collector account preview">
+            <div class="accountPreviewHeader">
+                <div>
+                    <h3>Account preview for collector</h3>
+                </div>
+                <span class="accountBadge">Reference during call</span>
+            </div>
+            <div class="accountSections">
+                <section>
+                    <h4>Consumer profile</h4>
+                    <dl class="accountFields">${profileRows || "<dt>Profile</dt><dd>Not provided</dd>"}</dl>
+                </section>
+                <section>
+                    <h4>Account details</h4>
+                    <dl class="accountFields">${accountRows || "<dt>Account</dt><dd>Not provided</dd>"}</dl>
+                </section>
+            </div>
+        </section>
     `;
 }
 
@@ -178,6 +351,7 @@ function body() {
 
 function lock(locked) {
     const controls = [
+        "callDirection",
         "scenario",
         ...Object.keys(opts),
         "randomizeBtn"
@@ -288,6 +462,9 @@ async function start() {
     // from affecting the next call.
 
     end(false);
+    callDirection = $("callDirection").value;
+    pendingCall = true;
+    showCallPhase("Preparing " + callDirection + " call…", "connecting");
 
     const callId =
         ++activeCallId;
@@ -417,6 +594,8 @@ async function start() {
                     }
                 });
 
+
+        stream.getAudioTracks().forEach(track => { track.enabled = false; });
 
         // If this is no longer the active call,
         // immediately stop the newly-created mic stream.
@@ -548,10 +727,7 @@ async function start() {
                     "Connected";
 
 
-                status(
-                    "Live",
-                    "live"
-                );
+                status("Ready to ring", "connecting");
 
 
                 log(
@@ -690,22 +866,15 @@ async function start() {
         );
 
 
-        started =
-            Date.now();
-
-
-        timer =
-            setInterval(
-                tick,
-                1000
-            );
-
-
-        $("endBtn").disabled =
-            false;
-
-        $("muteBtn").disabled =
-            false;
+        // Keep microphone gated until the simulated telephone connects.
+        $("endBtn").disabled = false;
+        if (callDc.readyState === "open") {
+            beginRinging(callId);
+        } else {
+            callDc.addEventListener("open", () => {
+                if (callId === activeCallId) beginRinging(callId);
+            }, {once: true});
+        }
 
 
     } catch (err) {
@@ -740,6 +909,16 @@ function events(message) {
                 2
             )
         );
+    }
+
+    if (message.type === "response.done" && greetingResponsePending) {
+        greetingResponsePending = false;
+        updateMicrophone();
+        if (message.response?.status && message.response.status !== "completed") {
+            error("Opening greeting response ended with status: " + message.response.status);
+        } else {
+            log("Opening greeting completed; microphone input enabled.");
+        }
     }
 
 
@@ -809,6 +988,12 @@ function events(message) {
 // --------------------------------------------------
 
 function end(reset = true) {
+    stopRinging();
+    pendingCall = false;
+    greetingCallId = null;
+    greetingResponsePending = false;
+    $("answerBtn").classList.add("hidden");
+    showCallPhase("", "idle");
 
     // --------------------------------------------------
     // Stop timer
@@ -968,15 +1153,7 @@ function mute() {
     muted =
         !muted;
 
-
-    stream
-        ?.getAudioTracks()
-        .forEach(
-            (track) => {
-                track.enabled =
-                    !muted;
-            }
-        );
+    updateMicrophone();
 
 
     $("muteBtn").textContent =
@@ -1054,7 +1231,7 @@ async function health() {
 $("scenario").onchange =
     async () => {
 
-        brief();
+        renderAccountDebrief();
         clearError();
 
         try {
@@ -1117,8 +1294,12 @@ $("randomizeBtn").onclick =
     };
 
 
-$("startBtn").onclick =
-    start;
+$("startBtn").onclick = start;
+$("answerBtn").onclick = () => {
+    if (callDirection !== "inbound" || !pendingCall || callPhase !== "ringing") return;
+    $("answerBtn").classList.add("hidden");
+    connectCall(activeCallId);
+};
 
 
 $("endBtn").onclick =

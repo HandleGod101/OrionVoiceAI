@@ -34,6 +34,7 @@ class SessionRequest(BaseModel):
  scenario_id:str
  communication:str="random"
  difficulty:str="random"
+ call_type:str="outbound"
 
 def scenarios():
  return json.loads((BASE_DIR/"scenarios.json").read_text(encoding="utf-8"))
@@ -61,11 +62,17 @@ def scenario_options(s):
  locked=s.get("locked_traits",{})
  return {key:{"values":allowed_for_scenario(s,key),"locked":key in locked,"locked_value":locked.get(key)} for key in OPTIONS}
 
-def prompt(s,v):
+def prompt(s,v,call_type="outbound"):
 
  
  return f"""You are the consumer described in the scenario, receiving a call from a debt-collection agency named Orion Capital Solutions.
 The human speaking to you is the collection agent.
+
+CALL DIRECTION: {call_type.upper()}
+- For outbound calls, you are answering a call placed by the collector. For inbound calls, you have called Orion Capital Solutions yourself.
+- On connection, a separate short greeting is triggered by the app. Say only a brief natural greeting initially and wait for the collector's introduction. Do not volunteer account details or your reason for calling in the initial greeting.
+- For inbound calls, once the collector asks how they can help, explain the scenario's reason for calling naturally. For outbound calls, respond to the collector's questions and do not act as if you initiated the call.
+- The scenario may describe an inbound reason for calling; adapt the framing to the chosen direction without changing underlying account facts, motivations, or barriers.
 
 ROLE RULES
 - Stay completely in character as the consumer. Never switch into another person's role.
@@ -205,7 +212,7 @@ CONSUMER SPEECH STYLE - IMPORTANT
 async def home():
  version = hashlib.sha256((BASE_DIR/"static"/"app.js").read_bytes()).hexdigest()[:16]
  html = (BASE_DIR/"static"/"index.html").read_text(encoding="utf-8")
- return HTMLResponse(html.replace('/static/app.js?v=3', f'/static/app.js?v={version}'))
+ return HTMLResponse(html.replace('/static/app.js?v=4', f'/static/app.js?v={version}'))
 
 @app.get("/api/health")
 async def health(): return {"ok":True,"api_key_configured":bool(OPENAI_API_KEY),"model":REALTIME_MODEL,"server_time":int(time.time())}
@@ -219,26 +226,30 @@ async def get_scenario_options(scenario_id:str):
 
 @app.get("/api/scenarios")
 async def get_scenarios():
- # Important: never expose AI-only hidden facts to collector UI.
+ # Expose only the fictional collector-facing record, never AI-only scenario facts.
  return [{"id":s["id"],"name":s["name"],
-          "collector_brief":s.get("collector_brief","")} for s in scenarios()]
+          "collector_brief":s.get("collector_brief",""),
+          "consumer":s.get("consumer",{}),
+          "account":s.get("account",{})} for s in scenarios()]
 
 @app.post("/api/session")
 async def create_session(body:SessionRequest):
  if not OPENAI_API_KEY: raise HTTPException(500,"OPENAI_API_KEY missing from .env")
  s=scenario_by_id(body.scenario_id)
+ if body.call_type not in ("inbound", "outbound"):
+  raise HTTPException(400,"call_type must be inbound or outbound")
  v={k:resolve_for_scenario(s,getattr(body,k),k) for k in OPTIONS}
  
  session={
 
   
-  "type":"realtime","model":REALTIME_MODEL,"instructions":prompt(s,v),
+  "type":"realtime","model":REALTIME_MODEL,"instructions":prompt(s,v,body.call_type),
   
   "audio":
     {
     "input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"gpt-realtime-whisper"},
     "noise_reduction":{"type":"far_field"},
-    "turn_detection":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":500,
+    "turn_detection":{"type":"server_vad","threshold":0.5,"prefix_padding_ms":300,"silence_duration_ms":700,
                       "idle_timeout_ms":None,"create_response":True,"interrupt_response":True}},
     "output":{"format":{"type":"audio/pcm","rate":24000},"voice":"marin"}
     },

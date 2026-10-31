@@ -74,6 +74,6 @@ You only need to edit `scenarios.json`. Copy an existing object and give it a un
 }
 ```
 
-`/api/scenarios` deliberately strips `account`, `situation`, and `hidden_facts`, so the browser/collector does not receive those fields.
+The scenario picker shows a fictional collector-facing account preview with the available consumer profile, account details, and payment history. `/api/scenarios` sends only `consumer`, `account`, and `collector_brief` for that preview; AI-only `situation`, `hidden_facts`, behavior rules, and voice style stay server-side.
 
 Use fictional/anonymized training information; don't paste real consumer PII into the scenario library.

@@ -7,13 +7,14 @@
     "consumer": {
       "name": "Rachel Carter",
       "date_of_birth": "1995-03-04",
-      "email": "rachel.carter@example.com",
-      "address": "123 Market Street, Twin City, Minnesota",
-      "phone": "fictional training number"
+      "email": "rachel.carter@gmail.com",
+      "address": "132 Market Street, Twin City, Minnesota",
+      "phone": "612-458-2922"
     },
     "account": {
       "balance": 1808.56,
       "previous_payment": 226.06,
+      "previous_payment_date": "February 21st",
       "status": "Previous payment arrangement defaulted after a missed payment.",
       "rights_holder": "Huntington Debt Holdings",
       "current_arrangement": false
