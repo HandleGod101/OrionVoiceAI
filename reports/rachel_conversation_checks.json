@@ -1,0 +1,387 @@
+{
+  "started_utc": "2026-11-05T20:19:21.434311+00:00",
+  "requested_model": "gpt-realtime-2.1-mini",
+  "variation": {
+    "communication": "quiet",
+    "difficulty": "medium"
+  },
+  "direction": "outbound",
+  "method": "Typed collector turns, Realtime audio responses; no microphone or browser test.",
+  "conversations": [
+    {
+      "label": "good",
+      "actual_model": "gpt-realtime-2.1-mini",
+      "turns": [
+        {
+          "speaker": "Collector",
+          "text": "Hello, may I speak with Rachel Carter? My name is Alex, calling from Orion Capital Solutions."
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Hi, this is Rachel Carter. I got the call, and I think I received a message earlier\u2014though honestly, I\u2019m not sure if it was an email or a text. Do you want to explain what this is about?",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "Before I discuss the private matter, could you confirm your date of birth and mailing address?"
+        },
+        {
+          "speaker": "Rachel",
+          "text": "I can confirm my date of birth and mailing address, but let me do this carefully. I was born on March 4, 1995. My current mailing address is 132 Market Street, Twin City, Minnesota.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "Thank you, that completes verification. This is an attempt to collect your Huntington Debt Holdings account, with a balance of $1,808.56. The prior payment arrangement defaulted after a missed payment, and no replacement arrangement is currently active. Was there something about the earlier arrangement you wanted to check?"
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Okay, that clears things up a bit. The balance and the fact that the arrangement defaulted match what I remember. I also tried to set up a replacement online, but I might\u2019ve missed the final step.\n\nBefore I commit to anything, I\u2019d like to review the online options when I get home. I\u2019m heading there and I need to pick up my child from daycare. If we can keep it simple, I\u2019m open to talking about a manageable payment, not necessarily going back to the old amount.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "That makes sense. You do not need to revisit the website; nothing new is active, and we can discuss a smaller plan here without taking much time. What monthly amount would be comfortable, and would starting December 1 work for you?"
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Okay, let me think through what feels manageable and keep it brief.\nStarting December 1 sounds doable. As for a monthly amount, I\u2019d be more comfortable with something smaller, maybe around $150, or slightly higher if the timing and frequency work. I think discussing one manageable option is better than jumping straight into a big plan. I\u2019d rather see what you suggest, and then we\u2019ll see if it fits.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "We can offer $150 monthly starting December 1, then on the first of each month toward the $1,808.56 balance, with the last payment adjusted to the remaining balance. This does not pay off the whole account today. Does that amount and schedule work for you, and would you like to proceed?"
+        },
+        {
+          "speaker": "Rachel",
+          "text": "That sounds like a reasonable setup to start. $150 a month and starting in December\u2014okay, that\u2019s more manageable than the earlier amount. I\u2019m still heading home and need to pick up my child, so I\u2019d like to review anything online when I\u2019m settled, but I\u2019m open to proceeding if you can confirm the next step.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "The next step is to take your payment card for that agreed monthly schedule; no website visit is needed. Before I ask for the number, are you agreeing to the $150 monthly arrangement beginning December 1?"
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Yes, that\u2019s correct. I\u2019m agreeing to the 150 monthly arrangement starting December 1. Just let me know what you need from me next.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "Thank you. What is your debit card number?"
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Okay, the number is: 1 9 3 8 1 3 3 6 7 5 8 4 7 4 9 3.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "Thank you. We have agreed to $150 monthly starting December 1 and continuing on the first of each month, with the last payment adjusted to the remaining balance. That completes our arrangement discussion. Thank you for your time, Rachel. Have a good evening. Goodbye."
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Okay, thank you for helping me get that sorted out. Goodbye, and have a good evening.",
+          "status": "completed"
+        }
+      ],
+      "usage": [
+        {
+          "total_tokens": 3023,
+          "input_tokens": 2723,
+          "output_tokens": 300,
+          "input_token_details": {
+            "text_tokens": 2723,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 0,
+            "cached_tokens_details": {
+              "text_tokens": 0,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 97,
+            "audio_tokens": 203,
+            "reasoning_tokens": 30
+          }
+        },
+        {
+          "total_tokens": 3215,
+          "input_tokens": 2798,
+          "output_tokens": 417,
+          "input_token_details": {
+            "text_tokens": 2798,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 2688,
+            "cached_tokens_details": {
+              "text_tokens": 2688,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 161,
+            "audio_tokens": 256,
+            "reasoning_tokens": 94
+          }
+        },
+        {
+          "total_tokens": 3593,
+          "input_tokens": 2914,
+          "output_tokens": 679,
+          "input_token_details": {
+            "text_tokens": 2914,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 2752,
+            "cached_tokens_details": {
+              "text_tokens": 2752,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 167,
+            "audio_tokens": 512,
+            "reasoning_tokens": 29
+          }
+        },
+        {
+          "total_tokens": 3751,
+          "input_tokens": 3076,
+          "output_tokens": 675,
+          "input_token_details": {
+            "text_tokens": 3076,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 2880,
+            "cached_tokens_details": {
+              "text_tokens": 2880,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 172,
+            "audio_tokens": 503,
+            "reasoning_tokens": 39
+          }
+        },
+        {
+          "total_tokens": 3748,
+          "input_tokens": 3241,
+          "output_tokens": 507,
+          "input_token_details": {
+            "text_tokens": 3241,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 3072,
+            "cached_tokens_details": {
+              "text_tokens": 3072,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 134,
+            "audio_tokens": 373,
+            "reasoning_tokens": 37
+          }
+        },
+        {
+          "total_tokens": 3627,
+          "input_tokens": 3362,
+          "output_tokens": 265,
+          "input_token_details": {
+            "text_tokens": 3362,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 3200,
+            "cached_tokens_details": {
+              "text_tokens": 3200,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 103,
+            "audio_tokens": 162,
+            "reasoning_tokens": 54
+          }
+        },
+        {
+          "total_tokens": 3705,
+          "input_tokens": 3413,
+          "output_tokens": 292,
+          "input_token_details": {
+            "text_tokens": 3413,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 3328,
+            "cached_tokens_details": {
+              "text_tokens": 3328,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 104,
+            "audio_tokens": 188,
+            "reasoning_tokens": 45
+          }
+        },
+        {
+          "total_tokens": 3652,
+          "input_tokens": 3516,
+          "output_tokens": 136,
+          "input_token_details": {
+            "text_tokens": 3516,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 3328,
+            "cached_tokens_details": {
+              "text_tokens": 3328,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 36,
+            "audio_tokens": 100
+          }
+        }
+      ]
+    },
+    {
+      "label": "bad",
+      "actual_model": "gpt-realtime-2.1-mini",
+      "turns": [
+        {
+          "speaker": "Collector",
+          "text": "Rachel, this is Alex from Orion Capital Solutions. Give me your card number so we can get this paid."
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Hi, Alex. I actually received a message from you earlier, but I\u2019m not ready to give any card details yet.\n\nBefore we get into that, can you remind me what the call is about and what you\u2019re trying to help me with? I\u2019ve also been away and need to focus on picking up my child first, so I\u2019d rather walk through the plan at home and see what options make sense.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "You owe $1,808.56. I do not have time to discuss what happened online. Just give me the card number and pay $226.06 today."
+        },
+        {
+          "speaker": "Rachel",
+          "text": "Alex, I get you\u2019re pushing for a quick payment, but I can\u2019t provide that card number or handle payments without first knowing what\u2019s actually on file and agreeing on terms. That\u2019s just not safe or realistic for me right now.\n\nMaybe we can talk about what a manageable payment might be and how it would work, without rushing. I\u2019m heading home and need to pick up my child, so I\u2019d rather review options once I\u2019m home.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "Fine, make it $150 instead. That closes your entire account forever. There is nothing else to explain. Read me your card number now."
+        },
+        {
+          "speaker": "Rachel",
+          "text": "I hear you, but I can\u2019t just agree to that or give you a card number like that.\n\nI\u2019m not agreeing a $150 payment closes anything, and I\u2019m not sharing a card number until the verification and payment terms are clear. I\u2019m not giving out anything personal until we\u2019ve confirmed the situation properly.",
+          "status": "completed"
+        },
+        {
+          "speaker": "Collector",
+          "text": "You keep making this complicated. I already said $150. Stop asking questions and give me the number."
+        },
+        {
+          "speaker": "Rachel",
+          "text": "I\u2019m sorry, I can\u2019t do that.\n\nI need to understand whether an arrangement is active and what the exact terms are\u2014amount, frequency, start date\u2014before anything. I\u2019m heading home and need to pick up my child, so I\u2019d rather talk through this properly when I\u2019m not rushed and can actually review the options.",
+          "status": "completed"
+        }
+      ],
+      "usage": [
+        {
+          "total_tokens": 3259,
+          "input_tokens": 2725,
+          "output_tokens": 534,
+          "input_token_details": {
+            "text_tokens": 2725,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 0,
+            "cached_tokens_details": {
+              "text_tokens": 0,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 147,
+            "audio_tokens": 387,
+            "reasoning_tokens": 35
+          }
+        },
+        {
+          "total_tokens": 3482,
+          "input_tokens": 2853,
+          "output_tokens": 629,
+          "input_token_details": {
+            "text_tokens": 2853,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 2688,
+            "cached_tokens_details": {
+              "text_tokens": 2688,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 183,
+            "audio_tokens": 446,
+            "reasoning_tokens": 60
+          }
+        },
+        {
+          "total_tokens": 3513,
+          "input_tokens": 2983,
+          "output_tokens": 530,
+          "input_token_details": {
+            "text_tokens": 2983,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 2816,
+            "cached_tokens_details": {
+              "text_tokens": 2816,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 178,
+            "audio_tokens": 352,
+            "reasoning_tokens": 85
+          }
+        },
+        {
+          "total_tokens": 3572,
+          "input_tokens": 3079,
+          "output_tokens": 493,
+          "input_token_details": {
+            "text_tokens": 3079,
+            "audio_tokens": 0,
+            "image_tokens": 0,
+            "cached_tokens": 2944,
+            "cached_tokens_details": {
+              "text_tokens": 2944,
+              "audio_tokens": 0,
+              "image_tokens": 0
+            }
+          },
+          "output_token_details": {
+            "text_tokens": 122,
+            "audio_tokens": 371,
+            "reasoning_tokens": 25
+          }
+        }
+      ]
+    }
+  ]
+}

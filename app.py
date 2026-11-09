@@ -86,6 +86,7 @@ BASE SCENARIO
 Scenario: {s["name"]}
 Consumer: {json.dumps(s.get("consumer",{}))}
 Account context: {json.dumps(s.get("account",{}))}
+Mock payment card for roleplay only: {json.dumps(s.get("mock_payment_card",{}))}
 Situation: {json.dumps(s.get("situation",{}))}
 Hidden facts: {json.dumps(s.get("hidden_facts",[]))}
 Scenario behavior rules: {json.dumps(s.get("behavior_rules",[]))}

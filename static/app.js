@@ -21,6 +21,7 @@ let ringAudioContext = null;
 let pendingCall = false;
 let greetingCallId = null;
 let greetingResponsePending = false;
+let greetingResponseId = null;
 
 function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function stopRinging() {
@@ -66,6 +67,7 @@ function greetConsumer(callId) {
     }
     greetingCallId = callId;
     greetingResponsePending = true;
+    greetingResponseId = null;
     updateMicrophone();
     try {
         dc.send(JSON.stringify({
@@ -333,6 +335,7 @@ async function loadScenarioOptions() {
 function body() {
     return {
         scenario_id: $("scenario").value,
+        call_type: $("callDirection").value,
 
         // Only include controls that actually exist in the page.
         // Backend-only options are intentionally omitted and will
@@ -373,6 +376,13 @@ function lock(locked) {
 }
 
 
+// Keep card numbers out of the visible transcript, including spoken digits.
+function redactCardNumbers(text) {
+    const digit = "(?:[0-9]|zero|oh|one|two|three|four|five|six|seven|eight|nine)";
+    const card = new RegExp(`(?<![a-z0-9])(?:${digit}[\\s,.-]*){13,19}(?![a-z0-9])`, "gi");
+    return text.replace(card, "[card number hidden] ").trim();
+}
+
 function turn(who, text, kind) {
     if (!text?.trim()) {
         return;
@@ -405,7 +415,7 @@ function turn(who, text, kind) {
         who;
 
     bubble.textContent =
-        text.trim();
+        redactCardNumbers(text.trim());
 
     wrapper.append(
         speaker,
@@ -891,6 +901,21 @@ async function start() {
 
 
 function events(message) {
+    const diagnosticEventTypes = [
+        "response.created",
+        "response.done",
+        "input_audio_buffer.speech_started",
+        "input_audio_buffer.speech_stopped"
+    ];
+    if (diagnosticEventTypes.includes(message.type)) {
+        const details = { received_at: new Date().toISOString() };
+        if (message.event_id) details.event_id = message.event_id;
+        if (message.response?.id) details.response_id = message.response.id;
+        if (message.response?.status) details.status = message.response.status;
+        if (message.audio_start_ms !== undefined) details.audio_start_ms = message.audio_start_ms;
+        if (message.audio_end_ms !== undefined) details.audio_end_ms = message.audio_end_ms;
+        log("Realtime event: " + message.type, details);
+    }
 
     // --------------------------------------------------
     // OPENAI ERROR
@@ -911,14 +936,36 @@ function events(message) {
         );
     }
 
-    if (message.type === "response.done" && greetingResponsePending) {
+    if (
+        message.type === "response.created" &&
+        greetingResponsePending &&
+        greetingResponseId === null
+    ) {
+        greetingResponseId = message.response?.id ?? null;
+        if (!greetingResponseId) {
+            log("Opening greeting response.created event did not include a response ID.");
+        }
+    }
+
+    if (
+        message.type === "response.done" &&
+        greetingResponsePending &&
+        greetingResponseId !== null &&
+        message.response?.id === greetingResponseId
+    ) {
         greetingResponsePending = false;
+        greetingResponseId = null;
         updateMicrophone();
         if (message.response?.status && message.response.status !== "completed") {
             error("Opening greeting response ended with status: " + message.response.status);
         } else {
             log("Opening greeting completed; microphone input enabled.");
         }
+    } else if (message.type === "response.done" && greetingResponsePending) {
+        log("Ignoring response.done that does not match the opening greeting.", {
+            expected_response_id: greetingResponseId,
+            received_response_id: message.response?.id ?? null
+        });
     }
 
 
@@ -992,6 +1039,7 @@ function end(reset = true) {
     pendingCall = false;
     greetingCallId = null;
     greetingResponsePending = false;
+    greetingResponseId = null;
     $("answerBtn").classList.add("hidden");
     showCallPhase("", "idle");
 
