@@ -5,12 +5,14 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from typing import Literal
+from evaluation.evaluator import evaluate
 
 load_dotenv()
 BASE_DIR=Path(__file__).resolve().parent
 OPENAI_API_KEY=os.getenv("OPENAI_API_KEY","").strip()
-REALTIME_MODEL=os.getenv("OPENAI_REALTIME_MODEL","gpt-realtime-2.1").strip()
+REALTIME_MODEL=os.getenv("OPENAI_REALTIME_MODEL","gpt-realtime-2.1-mini").strip()
 logging.basicConfig(level=logging.INFO,format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 log=logging.getLogger("orion-voice")
 app=FastAPI(title="Orion Voice Training Prototype",version="0.2.0")
@@ -86,7 +88,6 @@ BASE SCENARIO
 Scenario: {s["name"]}
 Consumer: {json.dumps(s.get("consumer",{}))}
 Account context: {json.dumps(s.get("account",{}))}
-Mock payment card for roleplay only: {json.dumps(s.get("mock_payment_card",{}))}
 Situation: {json.dumps(s.get("situation",{}))}
 Hidden facts: {json.dumps(s.get("hidden_facts",[]))}
 Scenario behavior rules: {json.dumps(s.get("behavior_rules",[]))}
@@ -211,9 +212,11 @@ CONSUMER SPEECH STYLE - IMPORTANT
 
 @app.get("/")
 async def home():
- version = hashlib.sha256((BASE_DIR/"static"/"app.js").read_bytes()).hexdigest()[:16]
  html = (BASE_DIR/"static"/"index.html").read_text(encoding="utf-8")
- return HTMLResponse(html.replace('/static/app.js?v=4', f'/static/app.js?v={version}'))
+ for asset in ("app.js", "styles.css"):
+  version = hashlib.sha256((BASE_DIR/"static"/asset).read_bytes()).hexdigest()[:16]
+  html = html.replace(f'/static/{asset}?v=4', f'/static/{asset}?v={version}')
+ return HTMLResponse(html)
 
 @app.get("/api/health")
 async def health(): return {"ok":True,"api_key_configured":bool(OPENAI_API_KEY),"model":REALTIME_MODEL,"server_time":int(time.time())}
@@ -276,3 +279,30 @@ async def create_session(body:SessionRequest):
  if not secret: raise HTTPException(502,"No ephemeral secret returned")
  return {"client_secret":secret,"expires_at":data.get("expires_at"),
          "scenario":{"id":s["id"],"name":s["name"],"consumer_name":s.get("consumer",{}).get("name","")},"variation":v,"model":REALTIME_MODEL}
+
+
+# Stateless evaluation: transcript is sent once by the browser after the call.
+# No transcript, result, or user history is written to disk or retained server-side.
+class TranscriptTurn(BaseModel):
+ id: str = Field(min_length=1, max_length=100)
+ speaker: Literal["agent", "consumer"]
+ text: str = Field(min_length=1, max_length=4000)
+ timestamp_ms: int = Field(ge=0, le=7200000)
+
+class EvaluationRequest(BaseModel):
+ scenario_id: Literal["failed_payment_arrangement"]
+ turns: list[TranscriptTurn] = Field(min_length=1, max_length=400)
+ metadata: dict = Field(default_factory=dict)
+ transcript_quality: dict = Field(default_factory=dict)
+
+@app.post("/api/evaluate")
+async def evaluate_call(body: EvaluationRequest):
+ if not OPENAI_API_KEY: raise HTTPException(500, "OPENAI_API_KEY missing")
+ turns = [t.model_dump() for t in body.turns]
+ if len({t["id"] for t in turns}) != len(turns): raise HTTPException(400, "Duplicate transcript turn IDs")
+ turns.sort(key=lambda t: (t["timestamp_ms"], int(t["id"].split("-")[-1]) if t["id"].split("-")[-1].isdigit() else 0))
+ try:
+  return await evaluate(turns, {k:v for k,v in body.metadata.items() if k in ("call_type", "communication", "difficulty", "duration_ms")}, body.transcript_quality)
+ except (httpx.HTTPError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+  log.error("Evaluator unavailable: %s", type(exc).__name__)
+  raise HTTPException(502, "Evaluation service unavailable. Please retry while this call's transcript is still on screen.")

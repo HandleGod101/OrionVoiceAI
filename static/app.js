@@ -8,6 +8,41 @@ let started = null;
 let muted = false;
 
 let aiText = "";
+// Ephemeral transcript, kept only in this browser tab until a new call/refresh.
+let evaluationTurns = [];
+let transcriptSequence = 0;
+let turnStartTimes = new Map();
+let pendingTranscripts = new Set();
+let pendingAgentSpeech = false;
+let transcriptIncomplete = false;
+let finalizedCall = null;
+let activeScenarioId = null;
+let evaluationBusy = false;
+let resolvedVariation = {};
+let callStartedAt = null;
+let callEndedAt = null;
+function recordTurn(speaker, text, itemId) {
+    if (!text || !text.trim()) return;
+    const existing = itemId && evaluationTurns.find(t => t.item_id === itemId && t.speaker === speaker);
+    if (existing) { existing.text = text.trim(); return; }
+    const stamp = itemId && turnStartTimes.has(itemId) ? turnStartTimes.get(itemId) : Date.now();
+    evaluationTurns.push({id: `turn-${++transcriptSequence}`, item_id: itemId || null, speaker,
+        text: text.trim(), timestamp_ms: Math.max(0, stamp - (callStartedAt || stamp))});
+}
+function resetEvaluation() {
+    evaluationTurns = []; transcriptSequence = 0; turnStartTimes.clear();
+    pendingTranscripts.clear(); pendingAgentSpeech = false; transcriptIncomplete = false;
+    finalizedCall = null; activeScenarioId = null; callStartedAt = null; callEndedAt = null;
+    $("resultsHint").textContent = "";
+    $("seeResultsBtn").classList.add("hidden");
+    $("resultsPanel").classList.add("hidden");
+    $("resultsContent").hidden = false;
+    $("evaluationToggleBtn").setAttribute("aria-expanded", "true");
+    $("evaluationToggleBtn").setAttribute("aria-label", "Collapse call evaluation");
+    $("resultsContent").replaceChildren();
+}
+
+const completedAiTranscripts = new Set();
 let consumerName = "Consumer";
 
 let scenarios = [];
@@ -89,6 +124,7 @@ function connectCall(callId) {
     showCallPhase("Connected — consumer answering…", "live");
     status("Live", "live");
     started = Date.now();
+    callStartedAt = started;
     if (timer) clearInterval(timer);
     timer = setInterval(tick, 1000);
     $("muteBtn").disabled = false;
@@ -98,7 +134,7 @@ function connectCall(callId) {
 function beginRinging(callId) {
     if (callId !== activeCallId) return;
     if (callDirection === "inbound") {
-        showCallPhase("Incoming call — answer within 20 seconds", "ringing");
+        showCallPhase("Incoming call — answer within 15 seconds", "ringing");
         status("Incoming call", "connecting");
         $("answerBtn").classList.remove("hidden");
         ringTone();
@@ -108,7 +144,7 @@ function beginRinging(callId) {
             end(true);
             showCallPhase("Missed call — no connection established", "missed");
             status("Missed call", "idle");
-        }, 20000);
+        }, 15000);
     } else {
         showCallPhase("Dialing…", "dialing");
         status("Dialing", "connecting");
@@ -335,11 +371,11 @@ async function loadScenarioOptions() {
 function body() {
     return {
         scenario_id: $("scenario").value,
-        call_type: $("callDirection").value,
 
         // Only include controls that actually exist in the page.
         // Backend-only options are intentionally omitted and will
         // be resolved server-side.
+        call_type: $("callDirection").value,
         ...Object.fromEntries(
             Object.keys(opts)
                 .filter((key) => $(key))
@@ -376,13 +412,6 @@ function lock(locked) {
 }
 
 
-// Keep card numbers out of the visible transcript, including spoken digits.
-function redactCardNumbers(text) {
-    const digit = "(?:[0-9]|zero|oh|one|two|three|four|five|six|seven|eight|nine)";
-    const card = new RegExp(`(?<![a-z0-9])(?:${digit}[\\s,.-]*){13,19}(?![a-z0-9])`, "gi");
-    return text.replace(card, "[card number hidden] ").trim();
-}
-
 function turn(who, text, kind) {
     if (!text?.trim()) {
         return;
@@ -415,7 +444,7 @@ function turn(who, text, kind) {
         who;
 
     bubble.textContent =
-        redactCardNumbers(text.trim());
+        text.trim();
 
     wrapper.append(
         speaker,
@@ -454,6 +483,7 @@ function tick() {
 
 
 async function start() {
+    if (evaluationBusy) return;
     clearError();
 
     // --------------------------------------------------
@@ -472,6 +502,7 @@ async function start() {
     // from affecting the next call.
 
     end(false);
+    resetEvaluation();
     callDirection = $("callDirection").value;
     pendingCall = true;
     showCallPhase("Preparing " + callDirection + " call…", "connecting");
@@ -480,6 +511,7 @@ async function start() {
         ++activeCallId;
 
     aiText = "";
+    completedAiTranscripts.clear();
     consumerName = "Consumer";
     started = null;
 
@@ -563,6 +595,8 @@ async function start() {
         // 2. READ RESOLVED SCENARIO CONFIGURATION
         // --------------------------------------------------
 
+        resolvedVariation = data.variation || {};
+        activeScenarioId = data.scenario.id;
         consumerName =
             data.scenario.consumer_name?.trim().split(/\s+/)[0] || "Consumer";
 
@@ -901,21 +935,17 @@ async function start() {
 
 
 function events(message) {
-    const diagnosticEventTypes = [
-        "response.created",
-        "response.done",
-        "input_audio_buffer.speech_started",
-        "input_audio_buffer.speech_stopped"
-    ];
-    if (diagnosticEventTypes.includes(message.type)) {
-        const details = { received_at: new Date().toISOString() };
-        if (message.event_id) details.event_id = message.event_id;
-        if (message.response?.id) details.response_id = message.response.id;
-        if (message.response?.status) details.status = message.response.status;
-        if (message.audio_start_ms !== undefined) details.audio_start_ms = message.audio_start_ms;
-        if (message.audio_end_ms !== undefined) details.audio_end_ms = message.audio_end_ms;
-        log("Realtime event: " + message.type, details);
+    if (message.type === "input_audio_buffer.speech_started") pendingAgentSpeech = true;
+    if (message.type === "input_audio_buffer.speech_stopped") pendingAgentSpeech = false;
+    if (message.type === "conversation.item.created" && message.item?.id) {
+        turnStartTimes.set(message.item.id, Date.now());
+        if (message.item.type === "message" && message.item.role === "user") pendingTranscripts.add(message.item.id);
     }
+    if (message.type === "conversation.item.input_audio_transcription.failed") {
+        transcriptIncomplete = true;
+        if (message.item_id) pendingTranscripts.delete(message.item_id);
+    }
+
 
     // --------------------------------------------------
     // OPENAI ERROR
@@ -936,23 +966,22 @@ function events(message) {
         );
     }
 
-    if (
-        message.type === "response.created" &&
-        greetingResponsePending &&
-        greetingResponseId === null
-    ) {
-        greetingResponseId = message.response?.id ?? null;
-        if (!greetingResponseId) {
-            log("Opening greeting response.created event did not include a response ID.");
+    if (message.type === "response.created") {
+        log("AI response created", {id: message.response?.id, greetingPending: greetingResponsePending, phase: callPhase});
+        if (greetingResponsePending && greetingResponseId === null) {
+            if (message.response?.id) {
+                greetingResponseId = message.response.id;
+            } else {
+                error("Realtime created a response without an ID; microphone will remain gated until the opening greeting is identified.");
+            }
         }
     }
-
-    if (
-        message.type === "response.done" &&
-        greetingResponsePending &&
-        greetingResponseId !== null &&
-        message.response?.id === greetingResponseId
-    ) {
+    if (message.type === "response.done") {
+        if (message.response?.status !== "completed") transcriptIncomplete = true;
+        log("AI response completed", {id: message.response?.id, status: message.response?.status});
+    }
+    if (message.type === "response.done" && greetingResponsePending &&
+        greetingResponseId !== null && message.response?.id === greetingResponseId) {
         greetingResponsePending = false;
         greetingResponseId = null;
         updateMicrophone();
@@ -978,11 +1007,9 @@ function events(message) {
         "conversation.item.input_audio_transcription.completed"
     ) {
 
-        turn(
-            "YOU / AGENT",
-            message.transcript,
-            "user"
-        );
+        if (message.item_id) pendingTranscripts.delete(message.item_id);
+        recordTurn("agent", message.transcript, message.item_id);
+        turn("YOU / AGENT", message.transcript, "user");
     }
 
 
@@ -1017,12 +1044,12 @@ function events(message) {
         )
     ) {
 
-        turn(
-            consumerName,
-            message.transcript ||
-            aiText,
-            "ai"
-        );
+        const transcriptKey = message.item_id || message.response_id || null;
+        if (!transcriptKey || !completedAiTranscripts.has(transcriptKey)) {
+            recordTurn("consumer", message.transcript || aiText, message.item_id || message.response_id);
+            turn(consumerName, message.transcript || aiText, "ai");
+            if (transcriptKey) completedAiTranscripts.add(transcriptKey);
+        }
 
 
         aiText = "";
@@ -1192,6 +1219,111 @@ function end(reset = true) {
 }
 
 
+
+// Freeze microphone first, wait briefly for final transcription events, then close.
+async function finishAndPrepareResults() {
+    if (evaluationBusy) return;
+    if (!started) { end(true); return; }
+    evaluationBusy = true;
+    $("endBtn").disabled = true;
+    stream?.getAudioTracks().forEach(t => { t.enabled = false; });
+    $("resultsHint").textContent = "Finalizing transcript…";
+    const cutoff = Date.now() + 3500;
+    // Wait for final agent transcriptions, with a bounded timeout.
+    while (pendingTranscripts.size && Date.now() < cutoff) await wait(150);
+    // Small grace period for response transcript events to arrive.
+    await wait(550);
+    if (pendingTranscripts.size || pendingAgentSpeech) transcriptIncomplete = true;
+    callEndedAt = Date.now();
+    finalizedCall = {
+        scenario_id: activeScenarioId,
+        turns: evaluationTurns.map(({id,speaker,text,timestamp_ms}) => ({id,speaker,text,timestamp_ms}))
+            .sort((a,b) => a.timestamp_ms-b.timestamp_ms || Number(a.id.split("-")[1])-Number(b.id.split("-")[1])),
+        metadata: {call_type: callDirection, communication: resolvedVariation.communication,
+            difficulty: resolvedVariation.difficulty, duration_ms: callEndedAt - callStartedAt},
+        transcript_quality: {incomplete: transcriptIncomplete, pending_turns: pendingTranscripts.size,
+            note: "Browser-received speech-to-text transcript; not independently verified against audio."}
+    };
+    end(true);
+    if (activeScenarioId !== "failed_payment_arrangement") {
+        $("resultsHint").textContent = "Call ended. Evaluation is currently available only for Rachel Carter.";
+        evaluationBusy = false;
+        return;
+    }
+    $("seeResultsBtn").classList.remove("hidden");
+    $("resultsHint").textContent = transcriptIncomplete
+        ? "Call ended. Some speech may be missing; the evaluator will flag uncertainty."
+        : "Call ended. Results are available until you start another call or refresh.";
+    evaluationBusy = false;
+}
+function renderResults(data) {
+    const root = $("resultsContent"); root.replaceChildren();
+    const heading = (text) => {const h=document.createElement("h3");h.textContent=text;root.append(h);};
+    const line = (label, status, reason, evidence, score) => {
+        const statusClass = score == null
+            ? status
+            : score >= 4 ? "pass" : score <= 1 ? "fail" : "needs_review";
+        const article=document.createElement("article");article.className=`evaluationItem evaluationItem--${statusClass}`;
+        const header=document.createElement("div");header.className="evaluationItemHeader";
+        const title=document.createElement("strong");title.textContent=label;
+        const tag=document.createElement("span");tag.className="evaluationStatus " + statusClass;
+        tag.textContent=score == null ? status.replaceAll("_", " ") : `${score}/5`;
+        header.append(title,tag);article.append(header);
+        const detail=document.createElement("p");detail.textContent=reason;article.append(detail);
+        (evidence||[]).forEach(ev => {const quote=document.createElement("blockquote");
+            quote.textContent=`${ev.turn_id}: “${ev.quote}”`;article.append(quote);});root.append(article);
+    };
+    heading("Compliance — evidence-based checks");
+    for (const [key,item] of Object.entries(data.compliance || {})) line(key.replaceAll("_"," "),item.status,item.reason,item.evidence);
+    heading("Call performance");
+    for (const [key,item] of Object.entries(data.performance || {})) line(key.replaceAll("_"," "),item.status,item.reason,item.evidence,item.score);
+    if (data.overall_summary) {
+        const summary=document.createElement("section");summary.className="evaluationSummary";
+        const summaryHeading=document.createElement("h3");summaryHeading.textContent="Coaching summary";
+        const summaryText=document.createElement("p");summaryText.textContent=data.overall_summary;
+        summary.append(summaryHeading,summaryText);root.append(summary);
+    }
+    for (const [label,items] of [["Strengths",data.strengths],["Improvements",data.improvements]]) {
+        if (!items?.length) continue;
+        const section=document.createElement("section");section.className=`evaluationNotes evaluationNotes--${label.toLowerCase()}`;
+        const h=document.createElement("h3");h.textContent=label;section.append(h);
+        const ul=document.createElement("ul");items.forEach(v=>{const li=document.createElement("li");li.textContent=v;ul.append(li);});
+        section.append(ul);root.append(section);
+    }
+}
+async function seeResults() {
+    if (!finalizedCall || evaluationBusy) return;
+    if (!finalizedCall.turns.some(t=>t.speaker==="agent")) {
+        $("resultsHint").textContent="No collector transcript was captured. Evaluation cannot proceed.";return;
+    }
+    evaluationBusy=true;
+    $("startBtn").disabled=true;
+    $("seeResultsBtn").disabled=true;
+    $("resultsPanel").classList.remove("hidden");
+    $("resultsContent").hidden=false;
+    $("evaluationToggleBtn").setAttribute("aria-expanded", "true");
+    $("evaluationToggleBtn").setAttribute("aria-label", "Collapse call evaluation");
+    $("resultsContent").textContent="Evaluating this call…";
+    try {
+        const res=await fetch("/api/evaluate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(finalizedCall)});
+        if (!res.ok) throw new Error((await res.json().catch(()=>({}))).detail||`HTTP ${res.status}`);
+        renderResults(await res.json());
+        $("resultsHint").textContent="";
+    } catch(e) {
+        $("resultsContent").textContent="Evaluation failed: "+e.message+". You can retry while this page remains open.";
+    } finally {evaluationBusy=false;$("seeResultsBtn").disabled=false;$("startBtn").disabled=false;}
+}
+
+function toggleEvaluation() {
+    const expanded = $("evaluationToggleBtn").getAttribute("aria-expanded") === "true";
+    $("resultsContent").hidden = expanded;
+    $("evaluationToggleBtn").setAttribute("aria-expanded", String(!expanded));
+    $("evaluationToggleBtn").setAttribute(
+        "aria-label",
+        expanded ? "Expand call evaluation" : "Collapse call evaluation"
+    );
+}
+
 // --------------------------------------------------
 // MUTE
 // --------------------------------------------------
@@ -1350,8 +1482,9 @@ $("answerBtn").onclick = () => {
 };
 
 
-$("endBtn").onclick =
-    () => end(true);
+$("endBtn").onclick = finishAndPrepareResults;
+$("seeResultsBtn").onclick = seeResults;
+$("evaluationToggleBtn").onclick = toggleEvaluation;
 
 
 $("muteBtn").onclick =
@@ -1361,6 +1494,29 @@ $("muteBtn").onclick =
 $("healthBtn").onclick =
     health;
 
+
+$("copyTranscript").onclick = async () => {
+    const button = $("copyTranscript");
+    const text = [...$("transcript").querySelectorAll(".turn")]
+        .map(turn => `${turn.querySelector(".who").textContent.trim()}:\n${turn.querySelector(".bubble").textContent.trim()}`)
+        .join("\n\n");
+    button.disabled = true;
+    try {
+        if (text) {
+            await navigator.clipboard.writeText(text);
+            button.textContent = "Copied!";
+        } else {
+            button.textContent = "Nothing to copy";
+        }
+    } catch {
+        button.textContent = "Copy failed";
+    } finally {
+        setTimeout(() => {
+            button.textContent = "Copy";
+            button.disabled = false;
+        }, 2000);
+    }
+};
 
 $("clearTranscript").onclick =
     () => {

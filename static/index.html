@@ -13,7 +13,7 @@
     <div>
       <div class="eyebrow">Orion Voice AI</div>
       <h1>Consumer call simulator</h1>
-      <p class="sub">Practice a live call with an AI-voiced consumer. Nothing is scored yet — this is just the interaction.</p>
+      <p class="sub">Orion Capital Solutions feedback is available for the Rachel Carter scenario.</p>
     </div>
     <div id="statusPill" class="pill idle">
       <span></span>
@@ -72,6 +72,7 @@
       <button id="startBtn" class="primary" type="button">Start call</button>
       <button id="answerBtn" class="primary hidden" type="button">Answer incoming call</button>
       <button id="endBtn" class="danger" type="button" disabled>End call</button>
+      <button id="seeResultsBtn" class="primary hidden" type="button">See results</button>
       <button id="muteBtn" class="secondary" type="button" disabled>Mute</button>
     </div>
 
@@ -91,13 +92,28 @@
     </div>
   </section>
 
+  <p id="resultsHint" class="sub" aria-live="polite"></p>
+  <section id="resultsPanel" class="card hidden" aria-live="polite">
+    <div class="evaluationTitle">
+      <h2>Rachel Carter — Call evaluation</h2>
+      <button id="evaluationToggleBtn" class="evaluationToggle" type="button"
+        aria-label="Collapse call evaluation" aria-expanded="true" aria-controls="resultsContent">
+        <span aria-hidden="true">˅</span>
+      </button>
+    </div>
+    <div id="resultsContent"></div>
+  </section>
+
   <!-- Transcript + troubleshooting ---------------------------------------- -->
   <section class="grid">
 
     <section class="card panel">
       <div class="sectionTitle">
         <h2>Live transcript</h2>
-        <button id="clearTranscript" class="textButton" type="button">Clear</button>
+        <div class="transcriptActions">
+          <button id="copyTranscript" class="textButton" type="button" aria-live="polite">Copy</button>
+          <button id="clearTranscript" class="textButton" type="button">Clear</button>
+        </div>
       </div>
       <div id="transcript" class="transcript">
         <div class="empty">Your conversation will show up here once the call starts.</div>

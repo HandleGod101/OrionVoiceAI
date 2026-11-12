@@ -83,22 +83,7 @@ header{
   overflow: hidden;
 }
 
-/* Faint waveform watermark — grounds the page as a phone tool without
-   shouting about it. Hidden on narrow screens so it never competes with
-   the status pill for space. */
-header::after{
-  content: '';
-  position: absolute;
-  right: -10px;
-  top: 50%;
-  width: 220px;
-  height: 46px;
-  transform: translateY(-50%);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='46' viewBox='0 0 220 46'%3E%3Cg fill='none' stroke='%230F5C4C' stroke-width='3' stroke-linecap='round'%3E%3Cline x1='4' y1='20' x2='4' y2='26'/%3E%3Cline x1='16' y1='14' x2='16' y2='32'/%3E%3Cline x1='28' y1='4' x2='28' y2='42'/%3E%3Cline x1='40' y1='17' x2='40' y2='29'/%3E%3Cline x1='52' y1='10' x2='52' y2='36'/%3E%3Cline x1='64' y1='20' x2='64' y2='26'/%3E%3Cline x1='76' y1='6' x2='76' y2='40'/%3E%3Cline x1='88' y1='15' x2='88' y2='31'/%3E%3Cline x1='100' y1='1' x2='100' y2='45'/%3E%3Cline x1='112' y1='12' x2='112' y2='34'/%3E%3Cline x1='124' y1='18' x2='124' y2='28'/%3E%3Cline x1='136' y1='8' x2='136' y2='38'/%3E%3Cline x1='148' y1='16' x2='148' y2='30'/%3E%3Cline x1='160' y1='4' x2='160' y2='42'/%3E%3Cline x1='172' y1='19' x2='172' y2='27'/%3E%3Cline x1='184' y1='11' x2='184' y2='35'/%3E%3Cline x1='196' y1='17' x2='196' y2='29'/%3E%3Cline x1='208' y1='21' x2='208' y2='25'/%3E%3C/g%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  opacity: 0.1;
-  pointer-events: none;
-}
+
 @media (max-width: 760px){
   header::after{ display: none; }
 }
@@ -217,6 +202,7 @@ h1{
   margin-bottom: 16px;
 }
 .sectionTitle h2{ font-size: 16px; font-weight: 700; }
+.transcriptActions{ display: flex; gap: 8px; flex-shrink: 0; }
 .sectionTitle p{ margin: 4px 0 0; font-size: 13px; color: var(--ink-muted); }
 
 /* ==========================================================================
@@ -544,3 +530,43 @@ pre{
 .callDirectionPicker { margin: 18px 0 14px; max-width: 440px; }
 .callPhase { margin: 12px 0; padding: 14px 16px; border-radius: 10px; background: var(--teal-tint); color: var(--teal-dark); font-weight: 600; }
 .callPhase.hidden, #answerBtn.hidden { display: none !important; }
+
+/* Post-call evaluation */
+#resultsPanel{padding:20px;margin-bottom:16px}
+.evaluationTitle{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.evaluationTitle h2{margin:0}
+.evaluationToggle{padding:4px 8px;min-height:40px;background:transparent;color:var(--ink-muted);font-size:24px}
+.evaluationToggle:hover{background:var(--paper);color:var(--ink)}
+.evaluationToggle span{display:block;transition:transform .15s ease}
+.evaluationToggle[aria-expanded="false"] span{transform:rotate(-90deg)}
+#resultsContent[hidden]{display:none}
+#resultsPanel h3{margin:22px 0 10px;font-size:16px}
+#resultsContent > h3:first-child{margin-top:0}
+.evaluationItem{
+  margin:10px 0;
+  padding:13px 15px;
+  border:1px solid var(--line);
+  border-left:4px solid var(--line);
+  border-radius:var(--radius-md);
+  background:var(--surface);
+}
+.evaluationItem--pass{border-color:#A8D4B2;background:#EAF5ED}
+.evaluationItem--fail{border-color:#E4AAAA;background:#FCECEC}
+.evaluationItem--needs_review{border-color:#E6CE88;background:#FFF7DF}
+.evaluationItem--not_applicable{border-color:#C9D0D9;background:#F1F3F6}
+.evaluationItemHeader{display:flex;justify-content:space-between;gap:12px;align-items:center;text-transform:capitalize}
+.evaluationItemHeader strong{font-size:14px}
+.evaluationItem p{margin:7px 0 0;font-size:13px;line-height:1.55}
+.evaluationItem blockquote{margin:9px 0 0;padding:7px 10px;border-left:3px solid #A8B1BE;border-radius:0 var(--radius-sm) var(--radius-sm) 0;background:rgba(255,255,255,.72);font-size:12px;line-height:1.5}
+.evaluationStatus{flex-shrink:0;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700;text-transform:capitalize;white-space:nowrap}
+.evaluationStatus.pass{background:#D4EBDD;color:#175C32}
+.evaluationStatus.fail{background:#F5DADA;color:#7A2121}
+.evaluationStatus.needs_review{background:#F6E9BC;color:#71520B}
+.evaluationStatus.not_applicable{background:#E1E5EA;color:#46536A}
+.evaluationSummary,.evaluationNotes{margin-top:18px;padding:16px 18px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper)}
+.evaluationSummary h3,.evaluationNotes h3{margin:0 0 8px!important}
+.evaluationSummary p{margin:0;font-size:13px;line-height:1.6}
+.evaluationNotes--strengths{border-color:#A8D4B2;background:#F0F7F1}
+.evaluationNotes--improvements{border-color:#E6CE88;background:#FFFAEA}
+.evaluationNotes ul{margin:0;padding-left:20px}
+.evaluationNotes li{margin:5px 0;font-size:13px;line-height:1.5}

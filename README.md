@@ -29,6 +29,7 @@ lsof -ti :8000 | xargs kill -9
 To share
 ```bash
 python -m uvicorn app:app --host 127.0.0.1 --port 8000
+
 In new terminal run share_mac.sh
 copy link
 ```
