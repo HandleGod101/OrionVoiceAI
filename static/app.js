@@ -7,13 +7,8 @@ let timer = null;
 let started = null;
 let muted = false;
 
-let aiText = "";
 // Ephemeral transcript, kept only in this browser tab until a new call/refresh.
 let evaluationTurns = [];
-let transcriptSequence = 0;
-let turnStartTimes = new Map();
-let pendingTranscripts = new Set();
-let pendingAgentSpeech = false;
 let transcriptIncomplete = false;
 let finalizedCall = null;
 let activeScenarioId = null;
@@ -21,17 +16,8 @@ let evaluationBusy = false;
 let resolvedVariation = {};
 let callStartedAt = null;
 let callEndedAt = null;
-function recordTurn(speaker, text, itemId) {
-    if (!text || !text.trim()) return;
-    const existing = itemId && evaluationTurns.find(t => t.item_id === itemId && t.speaker === speaker);
-    if (existing) { existing.text = text.trim(); return; }
-    const stamp = itemId && turnStartTimes.has(itemId) ? turnStartTimes.get(itemId) : Date.now();
-    evaluationTurns.push({id: `turn-${++transcriptSequence}`, item_id: itemId || null, speaker,
-        text: text.trim(), timestamp_ms: Math.max(0, stamp - (callStartedAt || stamp))});
-}
 function resetEvaluation() {
-    evaluationTurns = []; transcriptSequence = 0; turnStartTimes.clear();
-    pendingTranscripts.clear(); pendingAgentSpeech = false; transcriptIncomplete = false;
+    evaluationTurns = []; transcriptIncomplete = false;
     finalizedCall = null; activeScenarioId = null; callStartedAt = null; callEndedAt = null;
     $("resultsHint").textContent = "";
     $("seeResultsBtn").classList.add("hidden");
@@ -42,7 +28,6 @@ function resetEvaluation() {
     $("resultsContent").replaceChildren();
 }
 
-const completedAiTranscripts = new Set();
 let consumerName = "Consumer";
 
 let scenarios = [];
@@ -54,9 +39,6 @@ let ringingInterval = null;
 let ringTimeout = null;
 let ringAudioContext = null;
 let pendingCall = false;
-let greetingCallId = null;
-let greetingResponsePending = false;
-let greetingResponseId = null;
 
 function wait(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function stopRinging() {
@@ -89,48 +71,23 @@ function showCallPhase(message, phase) {
     $("callPhase").classList.toggle("hidden", phase === "idle");
 }
 function updateMicrophone() {
-    const enabled = !muted && !greetingResponsePending;
+    const enabled = !muted && callPhase === "live" && !evaluationBusy;
     stream?.getAudioTracks().forEach(track => { track.enabled = enabled; });
-    $("micState").textContent = muted ? "Muted" : greetingResponsePending ? "Waiting for greeting…" : "On";
+    $("micState").textContent = enabled ? "On" : muted ? "Muted" : "Waiting…";
 }
-function greetConsumer(callId) {
-    if (callId !== activeCallId || greetingCallId === callId) return;
-    if (!dc || dc.readyState !== "open") {
-        error("Cannot start the opening greeting because the Realtime data channel is not open.");
-        updateMicrophone();
-        return;
-    }
-    greetingCallId = callId;
-    greetingResponsePending = true;
-    greetingResponseId = null;
-    updateMicrophone();
-    try {
-        dc.send(JSON.stringify({
-            type: "response.create",
-            response: {
-                output_modalities: ["audio"],
-                instructions: "The simulated telephone has just connected. You are the consumer answering or calling. Say ONLY one short, casual opening greeting, such as 'Hello?', 'Hi?', or 'Hey, hello?'. Do not give your name, account information, reason for calling, or any other details yet. Then wait for the human collector to speak."
-            }
-        }));
-    } catch (err) {
-        greetingResponsePending = false;
-        updateMicrophone();
-        error("Could not start the opening greeting: " + err.message);
-    }
-}
-function connectCall(callId) {
+async function connectCall(callId) {
     if (callId !== activeCallId || !pendingCall) return;
-    stopRinging();
-    showCallPhase("Connected — consumer answering…", "live");
-    status("Live", "live");
-    started = Date.now();
-    callStartedAt = started;
-    if (timer) clearInterval(timer);
-    timer = setInterval(tick, 1000);
-    $("muteBtn").disabled = false;
     pendingCall = false;
-    greetConsumer(callId);
+    stopRinging();
+    showCallPhase("Connecting to GPT-Live…", "connecting");
+    try { await connectLive(callId); }
+    catch (err) {
+        if (callId !== activeCallId) return;
+        error(err.message);
+        end(true);
+    }
 }
+
 function beginRinging(callId) {
     if (callId !== activeCallId) return;
     if (callDirection === "inbound") {
@@ -482,591 +439,186 @@ function tick() {
 }
 
 
+let liveFragments = [];
+let liveEventIds = new Set();
+let liveClosed = false;
+let liveCloseResolve = null;
+let liveStartTimeout = null;
+let transcriptClearSequence = 0;
+let liveRequest = null;
+
+async function waitForIce(connection) {
+    if (connection.iceGatheringState === "complete") return;
+    await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => { cleanup(); reject(new Error("ICE gathering timed out")); }, 12000);
+        function cleanup() { clearTimeout(timeout); connection.removeEventListener("icegatheringstatechange", check); }
+        function check() {
+            if (connection.iceGatheringState === "complete") { cleanup(); resolve(); }
+        }
+        connection.addEventListener("icegatheringstatechange", check);
+        check();
+    });
+}
+
 async function start() {
     if (evaluationBusy) return;
-    clearError();
-
-    // --------------------------------------------------
-    // EVERY CALL IS INDEPENDENT
-    // --------------------------------------------------
-    //
-    // Tear down anything that might remain from a
-    // previous call BEFORE creating the new session.
-    //
-    // This prevents:
-    // - old WebRTC connections
-    // - old data channels
-    // - old microphone tracks
-    // - stale callbacks
-    //
-    // from affecting the next call.
-
     end(false);
     resetEvaluation();
+    clearError();
+    liveFragments = []; liveEventIds.clear(); liveClosed = false;
+    transcriptClearSequence = 0;
     callDirection = $("callDirection").value;
+    activeScenarioId = $("scenario").value;
+    consumerName = scenarios.find(s => s.id === activeScenarioId)?.consumer?.name?.split(/\s+/)[0] || "Consumer";
     pendingCall = true;
-    showCallPhase("Preparing " + callDirection + " call…", "connecting");
-
-    const callId =
-        ++activeCallId;
-
-    aiText = "";
-    completedAiTranscripts.clear();
-    consumerName = "Consumer";
-    started = null;
-
-    $("transcript").innerHTML =
-        '<div class="empty">' +
-        'Conversation appears here.' +
-        '</div>';
-
-    $("timer").textContent =
-        "00:00";
-
-    $("startBtn").disabled =
-        true;
-
+    const callId = ++activeCallId;
+    $("transcript").innerHTML = '<div class="empty">Conversation appears here.</div>';
+    $("timer").textContent = "00:00";
+    $("startBtn").disabled = true;
+    $("endBtn").disabled = false;
     lock(true);
-
-    status(
-        "Connecting…",
-        "connecting"
-    );
-
+    status("Preparing call", "connecting");
+    showCallPhase("Requesting microphone…", "connecting");
     try {
-
-        // --------------------------------------------------
-        // 1. CREATE BRAND-NEW SCENARIO SESSION
-        // --------------------------------------------------
-
-        log(
-            "1/6 Creating fresh scenario session.",
-            body()
-        );
-
-        const response =
-            await fetch(
-                "/api/session",
-                {
-                    method: "POST",
-
-                    // Never reuse an HTTP cached session response.
-                    cache: "no-store",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json",
-
-                        "Cache-Control":
-                            "no-cache, no-store, must-revalidate",
-
-                        "Pragma":
-                            "no-cache"
-                    },
-
-                    body:
-                        JSON.stringify(
-                            body()
-                        )
-                }
-            );
-
-        const data =
-            await response.json();
-
-        if (!response.ok) {
-            throw Error(
-                JSON.stringify(data)
-            );
-        }
-
-
-        // --------------------------------------------------
-        // Make sure this call wasn't replaced while the
-        // request was running.
-        // --------------------------------------------------
-
-        if (callId !== activeCallId) {
-            return;
-        }
-
-
-        // --------------------------------------------------
-        // 2. READ RESOLVED SCENARIO CONFIGURATION
-        // --------------------------------------------------
-
-        resolvedVariation = data.variation || {};
-        activeScenarioId = data.scenario.id;
-        consumerName =
-            data.scenario.consumer_name?.trim().split(/\s+/)[0] || "Consumer";
-
-
-        const key =
-            data.client_secret;
-
-
-        log(
-            "2/6 Variation resolved.",
-            data.variation
-        );
-
-
-        $("activeConfig").textContent =
-            `${data.scenario.name} • ` +
-            Object
-                .values(data.variation)
-                .map(title)
-                .join(" • ");
-
-
-        // --------------------------------------------------
-        // 3. REQUEST MICROPHONE
-        // --------------------------------------------------
-
-        log(
-            "3/6 Requesting microphone."
-        );
-
-
-        stream =
-            await navigator.mediaDevices
-                .getUserMedia({
-                    audio: {
-                        echoCancellation: true,
-                        noiseSuppression: true,
-                        autoGainControl: true
-                    }
-                });
-
-
-        stream.getAudioTracks().forEach(track => { track.enabled = false; });
-
-        // If this is no longer the active call,
-        // immediately stop the newly-created mic stream.
-
-        if (callId !== activeCallId) {
-            stream
-                ?.getTracks()
-                .forEach(
-                    (track) =>
-                        track.stop()
-                );
-
-            return;
-        }
-
-
-        $("micState").textContent =
-            "On";
-
-
-        // --------------------------------------------------
-        // 4. CREATE BRAND-NEW WEBRTC CONNECTION
-        // --------------------------------------------------
-
-        pc =
-            new RTCPeerConnection();
-
-        const callPc =
-            pc;
-
-
-        pc.onconnectionstatechange =
-            () => {
-
-                // Ignore callbacks from an older call.
-                if (
-                    callId !== activeCallId ||
-                    pc !== callPc
-                ) {
-                    return;
-                }
-
-                log(
-                    "Peer: " +
-                    pc.connectionState
-                );
-            };
-
-
-        // --------------------------------------------------
-        // RECEIVE AI AUDIO
-        // --------------------------------------------------
-
-        pc.ontrack =
-            (event) => {
-
-                // Ignore stale audio from an older call.
-                if (
-                    callId !== activeCallId ||
-                    pc !== callPc
-                ) {
-                    return;
-                }
-
-                $("remoteAudio").srcObject =
-                    event.streams[0];
-
-
-                $("remoteAudio")
-                    .play()
-                    .catch(
-                        (err) => {
-                            log(
-                                "Audio autoplay",
-                                err.message
-                            );
-                        }
-                    );
-
-
-                log(
-                    "Remote AI audio received."
-                );
-            };
-
-
-        // --------------------------------------------------
-        // SEND MICROPHONE AUDIO
-        // --------------------------------------------------
-
-        stream
-            .getTracks()
-            .forEach(
-                (track) => {
-                    pc.addTrack(
-                        track,
-                        stream
-                    );
-                }
-            );
-
-
-        // --------------------------------------------------
-        // 5. CREATE NEW OPENAI EVENT DATA CHANNEL
-        // --------------------------------------------------
-
-        dc =
-            pc.createDataChannel(
-                "oai-events"
-            );
-
-
-        const callDc =
-            dc;
-
-
-        dc.onopen =
-            () => {
-
-                // Ignore callbacks from previous calls.
-                if (
-                    callId !== activeCallId ||
-                    dc !== callDc
-                ) {
-                    return;
-                }
-
-                $("aiState").textContent =
-                    "Connected";
-
-
-                status("Ready to ring", "connecting");
-
-
-                log(
-                    "Data channel OPEN"
-                );
-            };
-
-
-        dc.onmessage =
-            (event) => {
-
-                // Ignore events belonging to an old call.
-                if (
-                    callId !== activeCallId ||
-                    dc !== callDc
-                ) {
-                    return;
-                }
-
-                try {
-                    const message =
-                        JSON.parse(
-                            event.data
-                        );
-
-                    events(message);
-
-                } catch (err) {
-                    log(
-                        "Could not parse OpenAI event.",
-                        err.message
-                    );
-                }
-            };
-
-
-        // --------------------------------------------------
-        // 6. CREATE SDP OFFER
-        // --------------------------------------------------
-
-        log(
-            "4/6 Creating SDP offer."
-        );
-
-
-        const offer =
-            await pc.createOffer();
-
-
-        await pc.setLocalDescription(
-            offer
-        );
-
-
-        // --------------------------------------------------
-        // Check again for stale call
-        // --------------------------------------------------
-
-        if (
-            callId !== activeCallId ||
-            pc !== callPc
-        ) {
-            return;
-        }
-
-
-        // --------------------------------------------------
-        // 7. EXCHANGE SDP WITH OPENAI
-        // --------------------------------------------------
-
-        log(
-            "5/6 Exchanging SDP."
-        );
-
-
-        let sdpResponse;
-        try {
-            sdpResponse = await fetch(
-                "https://api.openai.com/v1/realtime/calls",
-                {
-                    method: "POST",
-                    body: offer.sdp,
-                    headers: {
-                        Authorization: `Bearer ${key}`,
-                        "Content-Type": "application/sdp"
-                    }
-                }
-            );
-        } catch (err) {
-            throw new Error(
-                "The browser could not reach OpenAI to connect the voice call. " +
-                "Check your connection, VPN/firewall, or browser extensions. " +
-                "The browser console may show a network or CORS error. " +
-                `Details: ${err.message}`,
-                { cause: err }
-            );
-        }
-
-
-        if (!sdpResponse.ok) {
-            throw Error(
-                `SDP failed ${sdpResponse.status}: ` +
-                await sdpResponse.text()
-            );
-        }
-
-
-        // --------------------------------------------------
-        // Make sure this is still the active call.
-        // --------------------------------------------------
-
-        if (
-            callId !== activeCallId ||
-            pc !== callPc
-        ) {
-            return;
-        }
-
-
-        const answerSdp =
-            await sdpResponse.text();
-
-
-        await pc.setRemoteDescription({
-            type: "answer",
-            sdp: answerSdp
-        });
-
-
-        // --------------------------------------------------
-        // CALL READY
-        // --------------------------------------------------
-
-        log(
-            "6/6 Voice loop ready."
-        );
-
-
-        // Keep microphone gated until the simulated telephone connects.
-        $("endBtn").disabled = false;
-        if (callDc.readyState === "open") {
-            beginRinging(callId);
-        } else {
-            callDc.addEventListener("open", () => {
-                if (callId === activeCallId) beginRinging(callId);
-            }, {once: true});
-        }
-
-
+        const acquired = await navigator.mediaDevices.getUserMedia({audio: {
+            echoCancellation: true, noiseSuppression: true, autoGainControl: true
+        }});
+        if (callId !== activeCallId) { acquired.getTracks().forEach(t => t.stop()); return; }
+        stream = acquired;
+        stream.getAudioTracks().forEach(t => { t.enabled = false; });
+        beginRinging(callId);
     } catch (err) {
-
-        error(
-            err.stack ||
-            err.message
-        );
-
-
-        end(false);
+        if (callId !== activeCallId) return;
+        error(err.message); end(true);
     }
 }
 
-
-function events(message) {
-    if (message.type === "input_audio_buffer.speech_started") pendingAgentSpeech = true;
-    if (message.type === "input_audio_buffer.speech_stopped") pendingAgentSpeech = false;
-    if (message.type === "conversation.item.created" && message.item?.id) {
-        turnStartTimes.set(message.item.id, Date.now());
-        if (message.item.type === "message" && message.item.role === "user") pendingTranscripts.add(message.item.id);
-    }
-    if (message.type === "conversation.item.input_audio_transcription.failed") {
+async function connectLive(callId) {
+    const connection = pc = new RTCPeerConnection();
+    const current = () => callId === activeCallId && pc === connection;
+    connection.ontrack = event => {
+        if (!current()) return;
+        $("remoteAudio").srcObject = event.streams[0];
+        $("remoteAudio").play().catch(err => log("Audio playback: " + err.message));
+    };
+    connection.onconnectionstatechange = () => {
+        if (!current()) return;
+        log("Voice connection: " + connection.connectionState);
+        if (connection.connectionState === "failed") {
+            transcriptIncomplete = true;
+            error("Voice connection failed.");
+            finishAndPrepareResults();
+        }
+    };
+    stream.getTracks().forEach(track => connection.addTrack(track, stream));
+    const channel = dc = connection.createDataChannel("oai-events");
+    channel.onmessage = event => {
+        if (!current()) return;
+        try { events(JSON.parse(event.data)); }
+        catch (err) { transcriptIncomplete = true; log("Live event error: " + err.message); }
+    };
+    channel.onerror = () => { if (current()) error("Voice data channel error."); };
+    channel.onclose = () => {
+        if (!current() || liveClosed) return;
         transcriptIncomplete = true;
-        if (message.item_id) pendingTranscripts.delete(message.item_id);
-    }
-
-
-    // --------------------------------------------------
-    // OPENAI ERROR
-    // --------------------------------------------------
-
-    if (
-        message.type ===
-        "error"
-    ) {
-
-        error(
-            JSON.stringify(
-                message.error ||
-                message,
-                null,
-                2
-            )
-        );
-    }
-
-    if (message.type === "response.created") {
-        log("AI response created", {id: message.response?.id, greetingPending: greetingResponsePending, phase: callPhase});
-        if (greetingResponsePending && greetingResponseId === null) {
-            if (message.response?.id) {
-                greetingResponseId = message.response.id;
-            } else {
-                error("Realtime created a response without an ID; microphone will remain gated until the opening greeting is identified.");
-            }
-        }
-    }
-    if (message.type === "response.done") {
-        if (message.response?.status !== "completed") transcriptIncomplete = true;
-        log("AI response completed", {id: message.response?.id, status: message.response?.status});
-    }
-    if (message.type === "response.done" && greetingResponsePending &&
-        greetingResponseId !== null && message.response?.id === greetingResponseId) {
-        greetingResponsePending = false;
-        greetingResponseId = null;
-        updateMicrophone();
-        if (message.response?.status && message.response.status !== "completed") {
-            error("Opening greeting response ended with status: " + message.response.status);
-        } else {
-            log("Opening greeting completed; microphone input enabled.");
-        }
-    } else if (message.type === "response.done" && greetingResponsePending) {
-        log("Ignoring response.done that does not match the opening greeting.", {
-            expected_response_id: greetingResponseId,
-            received_response_id: message.response?.id ?? null
+        liveCloseResolve?.();
+        if (!evaluationBusy) finishAndPrepareResults();
+    };
+    const offer = await connection.createOffer();
+    if (!current()) return;
+    await connection.setLocalDescription(offer);
+    await waitForIce(connection);
+    if (!current()) return;
+    const controller = liveRequest = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 55000);
+    let data;
+    try {
+        const response = await fetch("/api/session", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            signal: controller.signal,
+            body: JSON.stringify({...body(), sdp: connection.localDescription.sdp})
         });
-    }
-
-
-    // --------------------------------------------------
-    // AGENT TRANSCRIPTION
-    // --------------------------------------------------
-
-    if (
-        message.type ===
-        "conversation.item.input_audio_transcription.completed"
-    ) {
-
-        if (message.item_id) pendingTranscripts.delete(message.item_id);
-        recordTurn("agent", message.transcript, message.item_id);
-        turn("YOU / AGENT", message.transcript, "user");
-    }
-
-
-    // --------------------------------------------------
-    // AI TRANSCRIPT STREAMING
-    // --------------------------------------------------
-
-    if (
-        [
-            "response.output_audio_transcript.delta",
-            "response.audio_transcript.delta"
-        ].includes(
-            message.type
-        )
-    ) {
-
-        aiText +=
-            message.delta || "";
-    }
-
-
-    // --------------------------------------------------
-    // AI TRANSCRIPT COMPLETED
-    // --------------------------------------------------
-
-    if (
-        [
-            "response.output_audio_transcript.done",
-            "response.audio_transcript.done"
-        ].includes(
-            message.type
-        )
-    ) {
-
-        const transcriptKey = message.item_id || message.response_id || null;
-        if (!transcriptKey || !completedAiTranscripts.has(transcriptKey)) {
-            recordTurn("consumer", message.transcript || aiText, message.item_id || message.response_id);
-            turn(consumerName, message.transcript || aiText, "ai");
-            if (transcriptKey) completedAiTranscripts.add(transcriptKey);
-        }
-
-
-        aiText = "";
-    }
+        data = await response.json();
+        if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
+    } finally { clearTimeout(timeout); if (liveRequest === controller) liveRequest = null; }
+    if (!current()) return;
+    resolvedVariation = data.variation || {};
+    activeScenarioId = data.scenario.id;
+    consumerName = data.scenario.consumer_name?.trim().split(/\s+/)[0] || "Consumer";
+    $("activeConfig").textContent = `${data.scenario.name} • ${Object.values(resolvedVariation).map(title).join(" • ")}`;
+    log("GPT-Live session created", {model: data.model, session_id: data.session_id});
+    liveStartTimeout = setTimeout(() => {
+        if (current() && callPhase !== "live") { error("GPT-Live did not start in time."); end(true); }
+    }, 20000);
+    await connection.setRemoteDescription({type: "answer", sdp: data.sdp});
 }
 
-
-// --------------------------------------------------
-// END / DESTROY CURRENT CALL
-// --------------------------------------------------
+function groupLiveFragments(fragments) {
+    const groups = [];
+    const lastBySpeaker = new Map();
+    for (const fragment of [...fragments].sort((a,b) => a.start-b.start || a.sequence-b.sequence)) {
+        const last = lastBySpeaker.get(fragment.speaker);
+        if (last && fragment.start <= last.end + 1500 && last.text.length + fragment.text.length <= 3500) {
+            last.text += fragment.text;
+            last.end = Math.max(last.end, fragment.end);
+        } else {
+            const group = {...fragment}; groups.push(group); lastBySpeaker.set(fragment.speaker, group);
+        }
+    }
+    return groups;
+}
+function captureLiveTranscript(message, speaker) {
+    if (!message.delta) return;
+    if (message.event_id && liveEventIds.has(message.event_id)) return;
+    if (message.event_id) liveEventIds.add(message.event_id);
+    const start = Number.isFinite(message.start_ms) ? message.start_ms : Math.max(0, Date.now() - (callStartedAt || Date.now()));
+    const endTime = Number.isFinite(message.end_ms) ? Math.max(start, message.end_ms) : start;
+    liveFragments.push({speaker, text: message.delta, start, end: endTime, sequence: liveFragments.length + 1});
+    evaluationTurns = groupLiveFragments(liveFragments).filter(t => t.text.trim()).map((t,i) => ({
+        id: `turn-${i+1}`, speaker: t.speaker, text: t.text.trim(), timestamp_ms: Math.round(t.start)
+    }));
+    $("transcript").replaceChildren();
+    for (const t of groupLiveFragments(liveFragments.filter(t => t.sequence > transcriptClearSequence))) {
+        turn(t.speaker === "agent" ? "YOU / AGENT" : consumerName, t.text, t.speaker === "agent" ? "user" : "ai");
+    }
+}
+function events(message) {
+    if (message.type === "session.started") {
+        if (started || liveClosed) return;
+        clearTimeout(liveStartTimeout); liveStartTimeout = null;
+        started = callStartedAt = Date.now();
+        showCallPhase("Connected — consumer answering…", "live");
+        status("Live", "live");
+        $("aiState").textContent = "Connected";
+        $("muteBtn").disabled = false;
+        timer = setInterval(tick, 1000);
+        updateMicrophone();
+        dc.send(JSON.stringify({type: "session.commentary.append", event_id: `greeting_${activeCallId}`,
+            delegation_id: null, content: "Begin now in English with only a short natural hello, then pause and listen to the collector. Do not volunteer account details in the greeting."}));
+    } else if (message.type === "session.input_transcript.delta") {
+        captureLiveTranscript(message, "agent");
+    } else if (message.type === "session.output_transcript.delta") {
+        captureLiveTranscript(message, "consumer");
+    } else if (message.type === "session.closed") {
+        liveClosed = true;
+        log("GPT-Live closed", {reason: message.reason, usage: message.usage});
+        liveCloseResolve?.();
+        if (!evaluationBusy) finishAndPrepareResults();
+    } else if (message.type === "error" || message.type === "session.error") {
+        transcriptIncomplete = true;
+        error(message.error?.message || JSON.stringify(message.error || message));
+    }
+}
 
 function end(reset = true) {
+    clearTimeout(liveStartTimeout); liveStartTimeout = null;
+    liveRequest?.abort(); liveRequest = null;
+    liveCloseResolve?.(); liveCloseResolve = null;
+    if (!liveClosed && dc?.readyState === "open") {
+        try { dc.send(JSON.stringify({type: "session.close"})); } catch {}
+    }
     stopRinging();
     pendingCall = false;
-    greetingCallId = null;
-    greetingResponsePending = false;
-    greetingResponseId = null;
     $("answerBtn").classList.add("hidden");
     showCallPhase("", "idle");
 
@@ -1094,6 +646,7 @@ function end(reset = true) {
             dc.onopen = null;
             dc.onmessage = null;
             dc.onerror = null;
+            dc.onclose = null;
             dc.onclose = null;
 
             dc.close();
@@ -1156,7 +709,6 @@ function end(reset = true) {
     dc = null;
     stream = null;
 
-    aiText = "";
     muted = false;
 
 
@@ -1220,7 +772,7 @@ function end(reset = true) {
 
 
 
-// Freeze microphone first, wait briefly for final transcription events, then close.
+// Freeze the microphone and wait for Live to drain transcripts before evaluation.
 async function finishAndPrepareResults() {
     if (evaluationBusy) return;
     if (!started) { end(true); return; }
@@ -1228,12 +780,17 @@ async function finishAndPrepareResults() {
     $("endBtn").disabled = true;
     stream?.getAudioTracks().forEach(t => { t.enabled = false; });
     $("resultsHint").textContent = "Finalizing transcript…";
-    const cutoff = Date.now() + 3500;
-    // Wait for final agent transcriptions, with a bounded timeout.
-    while (pendingTranscripts.size && Date.now() < cutoff) await wait(150);
-    // Small grace period for response transcript events to arrive.
-    await wait(550);
-    if (pendingTranscripts.size || pendingAgentSpeech) transcriptIncomplete = true;
+    if (!liveClosed && dc?.readyState === "open") {
+        await new Promise(resolve => {
+            const timeout = setTimeout(() => { transcriptIncomplete = true; done(); }, 15000);
+            function done() { clearTimeout(timeout); liveCloseResolve = null; resolve(); }
+            liveCloseResolve = done;
+            try { dc.send(JSON.stringify({type: "session.close"})); }
+            catch { transcriptIncomplete = true; done(); }
+        });
+    } else if (!liveClosed) {
+        transcriptIncomplete = true;
+    }
     callEndedAt = Date.now();
     finalizedCall = {
         scenario_id: activeScenarioId,
@@ -1241,8 +798,8 @@ async function finishAndPrepareResults() {
             .sort((a,b) => a.timestamp_ms-b.timestamp_ms || Number(a.id.split("-")[1])-Number(b.id.split("-")[1])),
         metadata: {call_type: callDirection, communication: resolvedVariation.communication,
             difficulty: resolvedVariation.difficulty, duration_ms: callEndedAt - callStartedAt},
-        transcript_quality: {incomplete: transcriptIncomplete, pending_turns: pendingTranscripts.size,
-            note: "Browser-received speech-to-text transcript; not independently verified against audio."}
+        transcript_quality: {incomplete: transcriptIncomplete, finalization_confirmed: liveClosed,
+            note: "GPT-Live timestamped transcript fragments grouped for evaluation; not independently verified against audio."}
     };
     end(true);
     if (activeScenarioId !== "failed_payment_arrangement") {
@@ -1520,6 +1077,7 @@ $("copyTranscript").onclick = async () => {
 
 $("clearTranscript").onclick =
     () => {
+        transcriptClearSequence = liveFragments.length;
 
         $("transcript").innerHTML =
             '<div class="empty">' +

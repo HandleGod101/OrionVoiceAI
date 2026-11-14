@@ -531,6 +531,24 @@ pre{
 .callPhase { margin: 12px 0; padding: 14px 16px; border-radius: 10px; background: var(--teal-tint); color: var(--teal-dark); font-weight: 600; }
 .callPhase.hidden, #answerBtn.hidden { display: none !important; }
 
+/* Isolated GPT-Live experiment page */
+.liveTestOptions{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.liveTestButtons{margin-top:16px}
+.liveTestAudio{display:block;width:100%;margin-top:16px}
+.liveTestTranscriptPanel{height:480px}
+.liveTestTranscript{
+  flex:1;
+  min-height:0;
+  overflow:auto;
+  padding:12px 14px;
+  border:1px solid var(--line-soft);
+  border-radius:var(--radius-md);
+  background:var(--paper);
+  white-space:pre-wrap;
+  font-size:14px;
+}
+.liveTestNote{margin:0 0 16px}
+
 /* Post-call evaluation */
 #resultsPanel{padding:20px;margin-bottom:16px}
 .evaluationTitle{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}

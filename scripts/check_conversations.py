@@ -1,6 +1,6 @@
 """Interactive Realtime behavior checks. Requires websockets and python-dotenv.
 Run from the project root; commands arrive as JSON lines on stdin.
-Uses the current app prompt without importing or starting the web server.
+Legacy Realtime check using the archived app_old.py prompt, not the current Live app.
 """
 import ast
 import hashlib
@@ -17,12 +17,12 @@ load_dotenv(ROOT / '.env')
 key = os.getenv('OPENAI_API_KEY', '').strip()
 if not key:
     raise SystemExit('OPENAI_API_KEY is not configured; no conversations run.')
-source = (ROOT / 'app.py').read_text()
+source = (ROOT / 'app_old.py').read_text()
 node = next(n for n in ast.parse(source).body if isinstance(n, ast.FunctionDef) and n.name == 'prompt')
 namespace = {'json': json}
-exec(compile(ast.Module(body=[node], type_ignores=[]), 'app.py', 'exec'), namespace)
+exec(compile(ast.Module(body=[node], type_ignores=[]), 'app_old.py', 'exec'), namespace)
 scenario = next(s for s in json.loads((ROOT / 'scenarios.json').read_text()) if s['consumer']['name'] == 'Rachel Carter')
-# Use the application's configured default if the environment has no override.
+# Use the legacy Realtime model default if the environment has no override.
 model = os.getenv('OPENAI_REALTIME_MODEL', 'gpt-realtime-2.1').strip()
 variation = {'communication': 'quiet', 'difficulty': 'medium'}
 instructions = namespace['prompt'](scenario, variation, 'outbound')
